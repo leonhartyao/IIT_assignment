@@ -1,0 +1,6 @@
+<launch>
+  <include file="$(find px4)/launch/mavros_posix_sitl.launch">
+    <arg name="vehicle" value="iris_depth_camera"/>
+    <arg name="world" value="/workspace/assignment/resources/aws-robomaker-small-house-world/worlds/small_house.world"/>
+  </include> 
+</launch>
