@@ -26,6 +26,7 @@ cs_add_library(trajectory_generator
 # target_link_libraries(offboard_node ${catkin_LIBRARIES})
 cs_add_executable(offboard_node
   src/offboard_node.cpp
+  src/offboard_control.cpp
   src/trajectory_generator.cpp
   )
 
