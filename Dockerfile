@@ -26,4 +26,4 @@ RUN cd /workspace/assignment/resources/ && git clone -b v1.13.3 https://github.c
 RUN cd /workspace/assignment/resources/PX4-Autopilot && git apply /workspace/assignment/scripts/0001-Added-depth-iris.patch
 RUN cd /workspace/assignment/resources/PX4-Autopilot && DONT_RUN=1 make px4_sitl gazebo
 RUN cd /workspace/assignment/resources && git clone -b ros1 https://github.com/aws-robotics/aws-robomaker-small-house-world
-WORKDIR /workspace/assignment/
+WORKDIR /workspace/catkin_ws/
