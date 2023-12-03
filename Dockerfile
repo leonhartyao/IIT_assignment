@@ -1,7 +1,7 @@
 FROM osrf/ros:noetic-desktop-full
 
 RUN apt-get update && apt-get install -y python3-catkin-tools python3-osrf-pycommon \
-     python-is-python2 python3-pip git
+     python-is-python2 python3-pip git python3-wstool
 
 RUN apt-get update && apt-get install -y \
     ros-noetic-mavros \
