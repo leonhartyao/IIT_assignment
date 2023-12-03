@@ -11,6 +11,7 @@
 #include <Eigen/Dense>
 #include <memory>
 
+#include "offboard_control/pos_control.h"
 #include "offboard_control/trajectory_generator.h"
 
 class OffboardControl {
@@ -42,7 +43,7 @@ class OffboardControl {
   mavros_msgs::State current_state;
   Eigen::Vector3d current_pose;
   std::unique_ptr<TrajectoryPlanner> planner;
+  std::unique_ptr<pos_control::PositionController> pos_controller;
 };
 
-
-#endif // OFFBOARD_CONTROL__OFFBOARD_CONTROL_H__
+#endif  // OFFBOARD_CONTROL__OFFBOARD_CONTROL_H__

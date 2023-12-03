@@ -28,6 +28,7 @@ cs_add_executable(offboard_node
   src/offboard_node.cpp
   src/offboard_control.cpp
   src/trajectory_generator.cpp
+  src/pos_control.cpp
   )
 
 #############
