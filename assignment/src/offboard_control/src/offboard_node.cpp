@@ -1,100 +1,270 @@
-/**
- * @file offboard_node.cpp
- * @brief Control node of offboard mode
- */
-
-#include "offboard_control/trajectory_generator.h"
-
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/TwistStamped.h>
 #include <mavros_msgs/CommandBool.h>
 #include <mavros_msgs/SetMode.h>
 #include <mavros_msgs/State.h>
 #include <ros/ros.h>
+
 #include <Eigen/Dense>
+#include <cmath>
 #include <memory>
+#include <numeric>
 
-mavros_msgs::State g_current_state;
+#include "offboard_control/trajectory_generator.h"
 
-/**
- * @brief Callback to upate FCU state
- *
- * @param msg mavros state msg
- */
-void state_cb(const mavros_msgs::State::ConstPtr& msg)
-{
-  g_current_state = *msg;
+geometry_msgs::PoseStamped eigenVector3dToPoseStamped(
+    const Eigen::Vector3d& eigenVec) {
+  geometry_msgs::PoseStamped poseStamped;
+  poseStamped.pose.position.x = eigenVec(0);
+  poseStamped.pose.position.y = eigenVec(1);
+  poseStamped.pose.position.z = eigenVec(2);
+
+  return poseStamped;
 }
 
-int main(int argc, char** argv) {
-  ros::init(argc, argv, "offboard_control");
-  ros::NodeHandle nh;
+class OffboardControl {
+ public:
+  OffboardControl() : nh("~"), rate(ros::Rate(20.0)) {
+    initializeRosInterface();
 
-  ros::Subscriber state_sub = nh.subscribe<mavros_msgs::State>("mavros/state", 1, state_cb);
-  ros::Publisher local_pos_pub = nh.advertise<geometry_msgs::PoseStamped>("mavros/setpoint_position/local", 10);
-  ros::ServiceClient arming_client = nh.serviceClient<mavros_msgs::CommandBool>("mavros/cmd/arming");
-  ros::ServiceClient set_mode_client = nh.serviceClient<mavros_msgs::SetMode>("mavros/set_mode");
+    // prepare trajectory
+    // TODO: load waypoints from config
+    std::vector<Eigen::Vector3d> waypoints;
+    waypoints.emplace_back(0.0, 0.0, 1.7);
+    waypoints.emplace_back(1.0, 0.0, 1.7);
+    waypoints.emplace_back(1.0, 1.0, 1.7);
+    waypoints.emplace_back(0.0, 1.0, 1.7);
+    waypoints.emplace_back(-1.0, 1.0, 1.7);
+    waypoints.emplace_back(-1.0, 0.0, 1.7);
 
-  // the setpoint publishing rate MUST be faster than 2Hz
-  ros::Rate rate(20.0);
-
-  // prepare trajectory
-  // TODO: load waypoints from config
-  std::vector<Eigen::Vector3d> waypoints;
-  waypoints.emplace_back(0.0, 0.0, 1.7);
-  waypoints.emplace_back(1.0, 0.0, 1.7);
-  waypoints.emplace_back(1.0, 0.5, 1.7);
-  waypoints.emplace_back(1.5, 0.7, 1.7);
-  waypoints.emplace_back(1.3, 1.5, 1.7);
-  waypoints.emplace_back(0.5, 1.0, 1.7);
-
-  std::unique_ptr<TrajectoryPlanner> planner = std::make_unique<TrajectoryPlanner>(waypoints, nh);
-
-  // wait for connection
-  while (ros::ok() && !g_current_state.connected) {
-    ros::spinOnce();
-    rate.sleep();
+    planner = std::make_unique<TrajectoryPlanner>(waypoints, nh);
   }
 
-  geometry_msgs::PoseStamped takeoff_pose;
-  takeoff_pose.pose.position.x = 0;
-  takeoff_pose.pose.position.y = 0;
-  takeoff_pose.pose.position.z = 1.7;
+  void initializeRosInterface() {
+    // Set up subscribers
+    state_sub =
+        nh.subscribe("/mavros/state", 1, &OffboardControl::stateCallback, this);
+    pose_sub = nh.subscribe("/mavros/local_position/pose", 1,
+                            &OffboardControl::poseCallback, this);
 
-  // send a few setpoints before starting
-  for (int i = 100; ros::ok() && i > 0; --i) {
-    local_pos_pub.publish(takeoff_pose);
-    ros::spinOnce();
-    rate.sleep();
+    // Set up publishers
+    local_pos_pub = nh.advertise<geometry_msgs::PoseStamped>(
+        "/mavros/setpoint_position/local", 10);
+    vel_pub = nh.advertise<geometry_msgs::TwistStamped>(
+        "/mavros/setpoint_velocity/cmd_vel", 10);
+    attitude_pub = nh.advertise<geometry_msgs::TwistStamped>("/mavros/setpoint_attitude/cmd_vel", 10);
+
+    // Set up services
+    set_mode_client =
+        nh.serviceClient<mavros_msgs::SetMode>("/mavros/set_mode");
+    arm_client =
+        nh.serviceClient<mavros_msgs::CommandBool>("/mavros/cmd/arming");
   }
 
-  mavros_msgs::SetMode mode_req;
-  mode_req.request.custom_mode = "OFFBOARD";
+  void stateCallback(const mavros_msgs::State::ConstPtr& msg) {
+    current_state = *msg;
+  }
 
-  mavros_msgs::CommandBool arm_req;
-  arm_req.request.value = true;
+  void poseCallback(const geometry_msgs::PoseStamped::ConstPtr& msg) {
+    current_pose << msg->pose.position.x, msg->pose.position.y,
+        msg->pose.position.z;
+    // TODO: add the customized position control here.
+    // controller->computeAttiSetpoint(pose_desired, current_pose)
+  }
 
-  ros::Time last_request_time = ros::Time::now();
+  void setMode(const std::string& mode) {
+    mavros_msgs::SetMode set_mode;
+    set_mode.request.custom_mode = mode;
 
-  while (ros::ok()) {
-    if (g_current_state.mode != "OFFBOARD" && (ros::Time::now() - last_request_time > ros::Duration(5.0))) {
-      if (set_mode_client.call(mode_req) && mode_req.response.mode_sent) {
-        ROS_INFO("Offboard enabled");
-      }
-      last_request_time = ros::Time::now();
+    if (set_mode_client.call(set_mode) && set_mode.response.mode_sent) {
+      ROS_INFO("Mode set to: %s", mode.c_str());
     } else {
-      if (!g_current_state.armed && (ros::Time::now() - last_request_time > ros::Duration(5.0))) {
-        if (arming_client.call(arm_req) && arm_req.response.success) {
-          ROS_INFO("Vehicle armed");
-        }
-        last_request_time = ros::Time::now();
+      ROS_ERROR("Failed to set mode");
+    }
+  }
+
+  void arm(bool arm) {
+    mavros_msgs::CommandBool arm_cmd;
+    arm_cmd.request.value = arm;
+
+    if (arm_client.call(arm_cmd) && arm_cmd.response.success) {
+      if (arm) {
+        ROS_INFO("vehicle armed");
+      } else {
+        ROS_INFO("vehicle disarmed");
       }
+    } else {
+      ROS_ERROR("Failed to arm/disarm the vehicle");
+    }
+  }
+
+  void offboardControl() {
+    // Add a delay before setting the mode and arming
+    ros::Duration(1.0).sleep();
+
+    // Safe hovering altitude 1.7m
+    geometry_msgs::PoseStamped takeoff_pose;
+    double hovering_altitude = 1.7;
+    takeoff_pose.pose.position.z = hovering_altitude;
+
+    // prepare to switch to OFFBOARD
+    for (int i = 50; ros::ok() && i > 0; --i) {
+      takeoff_pose.header.stamp = ros::Time::now();
+      local_pos_pub.publish(takeoff_pose);
+      rate.sleep();
+      ros::spinOnce();
     }
 
-    local_pos_pub.publish(takeoff_pose);
+    setMode("OFFBOARD");
+    // Wait for the OFFBOARD mode to be engaged
+    while (ros::ok() && current_state.mode != "OFFBOARD") {
+      takeoff_pose.header.stamp = ros::Time::now();
+      local_pos_pub.publish(takeoff_pose);
+      rate.sleep();
+      ros::spinOnce();
+    }
+    ros::Time offboard_start_time = ros::Time::now();
 
-    ros::spinOnce();
+    // Delay before arm
+    while (ros::ok() &&
+           (ros::Time::now() - offboard_start_time < ros::Duration(1.0))) {
+      takeoff_pose.header.stamp = ros::Time::now();
+      local_pos_pub.publish(takeoff_pose);
+      rate.sleep();
+      ros::spinOnce();
+    }
+
+    // Arm the vehicle
+    arm(true);
     rate.sleep();
+    ros::spinOnce();
+
+    // Wait for the vehicle to be armed
+    while (!current_state.armed && ros::ok()) {
+      takeoff_pose.header.stamp = ros::Time::now();
+      local_pos_pub.publish(takeoff_pose);
+      rate.sleep();
+      ros::spinOnce();
+    }
+
+    // Wait until the quadrotor reaches the desired altitude
+    while (ros::ok() && abs(hovering_altitude - current_pose(2)) > 0.02) {
+      takeoff_pose.header.stamp = ros::Time::now();
+      local_pos_pub.publish(takeoff_pose);
+      rate.sleep();
+      ros::spinOnce();
+    }
+    ROS_INFO("vehicle reached hovering altitude");
+
+    // Keep the vehicle hovering for 1 seconds
+    ros::Time hover_start_time = ros::Time::now();
+    while (ros::ok() &&
+           ((ros::Time::now() - hover_start_time) < ros::Duration(1.0))) {
+      takeoff_pose.header.stamp = ros::Time::now();
+      local_pos_pub.publish(takeoff_pose);
+      rate.sleep();
+      ros::spinOnce();
+    }
+
+    // ROS_INFO("vehicle goes to desired waypoint");
+    // Eigen::Vector3d waypoint;
+    // waypoint << 0.1, 0.0, 1.7;  // Adjust the waypoint coordinates
+    // geometry_msgs::PoseStamped pose_desired =
+    //     eigenVector3dToPoseStamped(waypoint);
+
+    // while (ros::ok() && ((current_pose - waypoint).norm() > 0.05)) {
+    //   ROS_INFO("distance error norm: %f", (current_pose - waypoint).norm());
+    //   pose_desired.header.stamp = ros::Time::now();
+    //   local_pos_pub.publish(pose_desired);
+    //   rate.sleep();
+    //   ros::spinOnce();
+    // }
+
+    ROS_INFO("vehicle follows trajectory defined by waypoints");
+    // TODO: enable the customized position control here.
+    geometry_msgs::PoseStamped pose_desired;
+    mav_trajectory_generation::Trajectory trajectory = planner->getTrajectory();
+    std::vector<double> segment_times = trajectory.getSegmentTimes();
+    // Calculate the total duration of the trajectory
+    double total_duration = std::accumulate(segment_times.begin(), segment_times.end(), 0.0);
+    ROS_INFO("trajectory duration total: %f", total_duration);
+    double sampling_time = 0;
+    int derivative_order = mav_trajectory_generation::derivative_order::POSITION;
+    ros::Time traj_start_time = ros::Time::now();
+    // TODO: traj duration condition
+    while (ros::ok() && (sampling_time < total_duration)) {
+      sampling_time = (ros::Time::now() - traj_start_time).toSec();
+      Eigen::VectorXd sample = planner->sampleTrajectory(sampling_time, derivative_order);
+      pose_desired = eigenVector3dToPoseStamped(sample.head<3>());
+      // ROS_INFO("distance error norm: %f", (current_pose - sample.head<3>()).norm());
+      pose_desired.header.stamp = ros::Time::now();
+      local_pos_pub.publish(pose_desired);
+
+
+      ROS_INFO("desired pos x: %f y: %f z: %f", pose_desired.pose.position.x, pose_desired.pose.position.y, pose_desired.pose.position.z);
+      rate.sleep();
+      ros::spinOnce();
+    }
+
+    ROS_INFO("vehicle reached desired waypoint");
+    hover_start_time = ros::Time::now();
+    while (ros::ok() &&
+           ((ros::Time::now() - hover_start_time) < ros::Duration(1.0))) {
+      pose_desired.header.stamp = ros::Time::now();
+      local_pos_pub.publish(pose_desired);
+      rate.sleep();
+      ros::spinOnce();
+    }
+
+    setMode("AUTO.LOITER");
+    rate.sleep();
+    ros::spinOnce();
+    // FIXME: Failed to switch from OFFBOARD to LOITER
+    // while (ros::ok() && current_state.mode != "AUTO.LOITER") {
+    //   ROS_INFO("current_mode is %s", current_state.mode.c_str());
+    //   pose_desired.header.stamp = ros::Time::now();
+    //   local_pos_pub.publish(pose_desired);
+    //   rate.sleep();
+    //   ros::spinOnce();
+    // }
+    ROS_INFO("vehicle is holding");
+
+    ros::Duration(2.0).sleep();
+    setMode("AUTO.LAND");
+
+    ros::Duration(8.0).sleep();
+
+    // Disarm the vehicle
+    arm(false);
+
+    // Keep the loop running for a moment to ensure that the disarming command
+    // is sent
+    for (int i = 0; i < 50; ++i) {
+      rate.sleep();
+      ros::spinOnce();
+    }
   }
+
+ private:
+  ros::Subscriber state_sub;
+  ros::Subscriber pose_sub;
+  ros::Publisher local_pos_pub;
+  ros::Publisher vel_pub;
+  ros::Publisher attitude_pub;
+  ros::ServiceClient set_mode_client;
+  ros::ServiceClient arm_client;
+  ros::NodeHandle nh;
+  ros::Rate rate;
+  mavros_msgs::State current_state;
+  Eigen::Vector3d current_pose;
+  std::unique_ptr<TrajectoryPlanner> planner;
+};
+
+int main(int argc, char** argv) {
+  ros::init(argc, argv, "offboard_control_node");
+  OffboardControl offboard_control;
+
+  offboard_control.offboardControl();
 
   return 0;
 }

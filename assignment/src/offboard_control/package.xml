@@ -52,18 +52,20 @@
   <buildtool_depend>catkin_simple</buildtool_depend>
 
   <depend>dynamic_reconfigure</depend>
+  <depend>eigen_catkin</depend>
   <depend>geometry_msgs</depend>
   <depend>mavros_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>roscpp</depend>
-  <depend>std_msgs</depend>
+  <!-- <depend>std_msgs</depend> -->
   <depend>trajectory_msgs</depend>
   <depend>mav_msgs</depend>
   <depend>mav_trajectory_generation</depend>
   <depend>mav_trajectory_generation_ros</depend>
-  <depend>mav_visualization</depend>
+  <!-- <depend>mav_visualization</depend> -->
   <depend>mav_planning_msgs</depend>
-  <depend>yaml-cpp</depend>
+  <depend>eigen_checks</depend>
+  <!-- <depend>yaml-cpp</depend> -->
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>

@@ -25,7 +25,7 @@ bool TrajectoryPlanner::generateTrajectory() {
 
     mav_trajectory_generation::Vertex::Vector vertices;
     mav_trajectory_generation::Vertex start(3), end(3);
-    const int derivative_to_optimize = derivative_to_optimize;
+    const int derivative_to_optimize = mav_trajectory_generation::derivative_order::SNAP;;
     start.makeStartOrEnd(waypoints_[0], derivative_to_optimize);
     vertices.push_back(start);
     for (size_t i = 1; i < waypoints_.size()-1; ++i) {
@@ -37,11 +37,11 @@ bool TrajectoryPlanner::generateTrajectory() {
     vertices.push_back(end);
 
     std::vector<double> segment_times;
-    const double v_max = 2.0;
-    const double a_max = 2.0;
+    const double v_max = 0.5;
+    const double a_max = 0.5;
     segment_times = estimateSegmentTimes(vertices, v_max, a_max);
 
-    mav_trajectory_generation::PolynomialOptimization<8> opt(3);
+    mav_trajectory_generation::PolynomialOptimization<10> opt(3);
     opt.setupFromVertices(vertices, segment_times, derivative_to_optimize);
 
     if (!opt.solveLinear()) {
