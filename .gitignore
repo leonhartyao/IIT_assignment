@@ -1,5 +1,6 @@
 .vscode/*
-assignment/src/.vscode/*
+assignment/.vscode/*
+assignment/.catkin_tools/*
 
 devel/
 logs/
