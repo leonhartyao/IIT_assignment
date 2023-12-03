@@ -1,5 +1,0 @@
-<launch>
-  <node name="trajectory_planner" pkg="trajectory_planner" type="traj_generator_node" output="screen">
-      <param name="waypoints_file" type="string" value="$(find trajectory_planner)/config/waypoints.yaml"/>
-  </node>
-</launch>
