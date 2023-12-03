@@ -1,6 +1,6 @@
 .vscode/*
 assignment/.vscode/*
-assignment/.catkin_tools/*
+# assignment/.catkin_tools/*
 
 devel/
 logs/
